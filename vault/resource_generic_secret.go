@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/vault/api"
@@ -44,6 +45,12 @@ func genericSecretResource() *schema.Resource {
 				ValidateFunc: ValidateDataJSON,
 			},
 
+			"data": &schema.Schema{
+				Type:        schema.TypeMap,
+				Computed:    true,
+				Description: "Map of strings from input and output data",
+			},
+
 			"allow_read": &schema.Schema{
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -56,6 +63,30 @@ func genericSecretResource() *schema.Resource {
 				Optional:    true,
 				Default:     false,
 				Description: "Don't attempt to read the token from Vault if true; drift won't be detected.",
+			},
+
+			"lease_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Lease identifier assigned by vault.",
+			},
+
+			"lease_duration": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "Lease duration in seconds relative to the time in lease_start_time.",
+			},
+
+			"lease_start_time": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "Time at which the lease was read, using the clock of the system where Terraform was running",
+			},
+
+			"lease_renewable": {
+				Type:        schema.TypeBool,
+				Computed:    true,
+				Description: "True if the duration of this lease can be extended through renewal.",
 			},
 		},
 	}
@@ -104,10 +135,27 @@ func genericSecretResourceWrite(d *schema.ResourceData, meta interface{}) error 
 	}
 
 	log.Printf("[DEBUG] Writing generic Vault secret to %s", path)
-	_, err = client.Logical().Write(path, data)
+	secret, err := client.Logical().Write(path, data)
 	if err != nil {
 		return fmt.Errorf("error writing to Vault: %s", err)
 	}
+
+	if secret != nil {
+		for k, v := range secret.Data {
+			if vs, ok := v.(string); ok {
+				data[k] = vs
+			} else {
+				vBytes, _ := json.Marshal(v)
+				data[k] = string(vBytes)
+			}
+		}
+
+		d.Set("lease_id", secret.LeaseID)
+		d.Set("lease_duration", secret.LeaseDuration)
+		d.Set("lease_start_time", time.Now().Format("RFC3339"))
+		d.Set("lease_renewable", secret.Renewable)
+	}
+	d.Set("data", data)
 
 	d.SetId(path)
 

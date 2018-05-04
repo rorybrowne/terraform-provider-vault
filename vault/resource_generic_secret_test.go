@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/vault/api"
 )
 
+# TODO: Add TestStep for the returning of Data
 func TestResourceGenericSecret(t *testing.T) {
 	path := acctest.RandomWithPrefix("secret/test")
 	resource.Test(t, resource.TestCase{
